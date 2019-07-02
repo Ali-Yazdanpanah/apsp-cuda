@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "floyd_Warshall_serial.h"
+
 
 #define INFTY 99999
 
@@ -66,18 +66,10 @@ int main(int argc, char **argv){
         D_Matrix[i] = malloc(N * sizeof(int));
     }
     makeAdjacency(N);
-    clock_t start = clock();  //First time measurement
-    // algorithm -->
-    floyd_warshall_serial(A_Matrix,D_Matrix,N);
-    // <--;	
-	clock_t end = clock();   //Final time calculation and convert it into seconds
-	float seconds = (float)(end - start) / CLOCKS_PER_SEC;
-	printf("Elapsed time = %f sec\n", seconds);
 	int gridx = pow(2, N - 4), gridy = pow(2, N - 4);  //Dimensions of grid
 	int blockx = pow(2, 4), blocky = pow(2, 4);
 	dim3 dimGrid(gridx, gridy);
 	dim3 dimBlock(blockx, blocky);
-	
 	
 	// allocate memory on the device
 	int* device_dist;
