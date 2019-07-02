@@ -2,9 +2,9 @@
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "floyd_warshall_serial.c"
+#include "floyd_Warshall_serial.c"
 
-#define INFTY INT_MAX
+#define INFTY 99999
 
 int **A_Matrix, **D_Matrix;
 
@@ -12,7 +12,6 @@ int main(int argc, char **argv){
 	int N;     
 	N = atoi(argv[1]);  //Read the console inputs
 	int n = pow(2, N);
-	makeAdjacency(n);  //Initialize table A
 	
     int i, j, k;
 
@@ -36,6 +35,7 @@ int main(int argc, char **argv){
 
 void makeAdjacency(int n){   //Set initial values to node distances
     int N=n;
+    int i,j;
     A_Matrix = malloc(N * sizeof(int *));
     for (i = 0; i < N; i++)
     {
