@@ -2,7 +2,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "floyd_Warshall_serial.c"
+#include "floyd_Warshall_serial.h"
 
 #define INFTY 99999
 

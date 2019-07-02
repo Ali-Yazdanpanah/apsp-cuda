@@ -3,7 +3,7 @@ sources = main.c floyd_Warshall_serial.c
 
 all: apsp1
 
-apsp1: $(sources) floyd_Warshall_serial.h
+apsp1: 
 	gcc -std=c99 -o apsp1 $(sources) -lm
 
 clean:
