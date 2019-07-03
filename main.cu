@@ -31,10 +31,10 @@ __global__ void floyd_warshall_parallel_kernel(int* dev_dist, int N, int k) {\
 void makeAdjacency(int n){   //Set initial values to node distances
     int N=n;
     int i,j;
-    A_Matrix = malloc(N * sizeof(int *));
+    A_Matrix = (int **)malloc(N * sizeof(int *));
     for (i = 0; i < N; i++)
     {
-        A_Matrix[i] = malloc(N * sizeof(int));
+        A_Matrix[i] = (int *)malloc(N * sizeof(int));
     }
 
     srand(0);
@@ -60,10 +60,10 @@ int main(int argc, char **argv){
     int N;     
 	N = atoi(argv[1]);  //Read the console inputs
     int i, j, k;
-	D_Matrix = malloc(N * sizeof(int *));
+	D_Matrix = (int **)malloc(N * sizeof(int *));
     for (i = 0; i < N; i++)
     {
-        D_Matrix[i] = malloc(N * sizeof(int));
+        D_Matrix[i] = (int *)malloc(N * sizeof(int));
     }
     makeAdjacency(N);
 	int gridx = pow(2, N - 4), gridy = pow(2, N - 4);  //Dimensions of grid
@@ -73,18 +73,17 @@ int main(int argc, char **argv){
 	
 	// allocate memory on the device
 	int* device_dist;
-	gpuErrchk( cudaMalloc( (void**)&device_dist, N*N * sizeof (int) ) );
+	cudaMalloc( (void**)&device_dist, N*N * sizeof (int) );
 	// initialize dist matrix on device
 	for (int i = 0; i < N; i++)
-		gpuErrchk( cudaMemcpy(device_dist +i*N, graph[i], N * sizeof (int),
-							  cudaMemcpyHostToDevice) );
+		cudaMemcpy(device_dist +i*N, graph[i], N * sizeof (int),
+							  cudaMemcpyHostToDevice);
 	// For each element of the vertex set
 	
 	clock_t start = clock();
 	for (int k = 0; k < N; k++) {
 		// launch kernel
 		floyd_warshall_parallel_kernel<<<dimGrid,dimBlock>>>(device_dist,N,k);
-		gpuKerchk();
     	}
 	clock_t end = clock();   //Final time calculation and convert it into seconds
 	float seconds = (float)(end - start) / CLOCKS_PER_SEC;
@@ -92,8 +91,8 @@ int main(int argc, char **argv){
 
 	// return results to dist matrix on host
 	for (int i = 0; i < N; i++)
-		 gpuErrchk( cudaMemcpy(dist[i], device_dist +i*N, N * sizeof (int),
-							  cudaMemcpyDeviceToHost) );
+		 cudaMemcpy(dist[i], device_dist +i*N, N * sizeof (int),
+							  cudaMemcpyDeviceToHost);
 
 	
 }

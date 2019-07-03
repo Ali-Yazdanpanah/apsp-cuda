@@ -12,10 +12,10 @@ int **A_Matrix, **D_Matrix;
 void makeAdjacency(int n){   //Set initial values to node distances
     int N=n;
     int i,j;
-    A_Matrix = malloc(N * sizeof(int *));
+    A_Matrix = (int **)malloc(N * sizeof(int *));
     for (i = 0; i < N; i++)
     {
-        A_Matrix[i] = malloc(N * sizeof(int));
+        A_Matrix[i] = (int *) malloc(N * sizeof(int));
     }
 
     srand(0);
@@ -41,10 +41,10 @@ int main(int argc, char **argv){
     int N;     
 	N = atoi(argv[1]);  //Read the console inputs
     int i, j, k;
-	D_Matrix = malloc(N * sizeof(int *));
+	D_Matrix =(int **) malloc(N * sizeof(int *));
     for (i = 0; i < N; i++)
     {
-        D_Matrix[i] = malloc(N * sizeof(int));
+        D_Matrix[i] =(int *) malloc(N * sizeof(int));
     }
     makeAdjacency(N);
     clock_t start = clock();  //First time measurement
