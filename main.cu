@@ -59,7 +59,7 @@ void makeAdjacency(int n){   //Set initial values to node distances
 int main(int argc, char **argv){
     int N;     
 	N = atoi(argv[1]);  //Read the console inputs
-    int i, j, k;
+    int i;
 	D_Matrix = (int **)malloc(N * sizeof(int *));
     for (i = 0; i < N; i++)
     {
@@ -76,7 +76,7 @@ int main(int argc, char **argv){
 	cudaMalloc( (void**)&device_dist, N*N * sizeof (int) );
 	// initialize dist matrix on device
 	for (int i = 0; i < N; i++)
-		cudaMemcpy(device_dist +i*N, graph[i], N * sizeof (int),
+		cudaMemcpy(device_dist +i*N, A_Matrix[i], N * sizeof (int),
 							  cudaMemcpyHostToDevice);
 	// For each element of the vertex set
 	
@@ -91,7 +91,7 @@ int main(int argc, char **argv){
 
 	// return results to dist matrix on host
 	for (int i = 0; i < N; i++)
-		 cudaMemcpy(dist[i], device_dist +i*N, N * sizeof (int),
+		 cudaMemcpy(D_Matrix[i], device_dist +i*N, N * sizeof (int),
 							  cudaMemcpyDeviceToHost);
 
 	
