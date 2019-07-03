@@ -49,7 +49,7 @@ void makeAdjacency(int n){   //Set initial values to node distances
 
 
 void dijkstra_all(int** graph, int** dist, int** stpSet, int n){
-    for(int i = 0: i < n; i++){
+    for(int i = 0; i < n; i++){
         dijkstra(graph, dist[i],stpSet[i],n,i);
     }
 }
@@ -71,7 +71,7 @@ void dijkstra(int** graph,int* dist,int* stpSet, int n, int src)
      { 
        // Pick the minimum distance vertex from the set of vertices not 
        // yet processed. u is always equal to src in the first iteration. 
-       int u = minDistance(dist, stpSet); 
+       int u = minDistance(dist, stpSet , n); 
    
        // Mark the picked vertex as processed 
        stpSet[u] = 1; 
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
     for (i = 0; i < N; i++)
     {
         D_Matrix[i] = (int *)malloc(N * sizeof(int));
-        stpSet[i] = (int *)malloc(N * sizeof(int))
+        stpSet[i] = (int *)malloc(N * sizeof(int));
     }
     makeAdjacency(N);
     clock_t start = clock();  //First time measurement
