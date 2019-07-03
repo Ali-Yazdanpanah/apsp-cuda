@@ -12,7 +12,6 @@ apsp2:
 	gcc -std=c99 $(sources2) -o apsp2 -lm
 
 apsp1cuda:
-	main.cu Makefile
 	nvcc -o main.cu $(nvcc_options)
 
 clean:
