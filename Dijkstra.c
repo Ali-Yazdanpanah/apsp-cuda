@@ -2,16 +2,16 @@
 #include "Dijkstra.h" 
    
 int **A_Matrix, **D_Matrix;
-bool **stpSet;
+int **stpSet;
 
 // A utility function to find the vertex with minimum distance value, from 
 // the set of vertices not yet included in shortest path tree 
-int minDistance(int* dist, bool* stpSet, int n) 
+int minDistance(int* dist, int* stpSet, int n) 
 { 
    // Initialize min value 
-    int min = INT_MAX, min_index; 
+    int min = INFTY, min_index; 
     for(int j = 0; j < n; j++){
-        if (stpSet[j] == false && dist[j] <= min) 
+        if (stpSet[j] == 0 && dist[j] <= min) 
         min = dist[j], min_index = j;
     } 
     return min_index; 
@@ -48,7 +48,7 @@ void makeAdjacency(int n){   //Set initial values to node distances
 
 
 
-void dijkstra_all(int** graph, int** dist, bool** stpSet, int n){
+void dijkstra_all(int** graph, int** dist, int** stpSet, int n){
     for(int i = 0: i < n; i++){
         dijkstra(graph, dist[i],stpSet[i],n,i);
     }
@@ -56,16 +56,16 @@ void dijkstra_all(int** graph, int** dist, bool** stpSet, int n){
 
 // Function that implements Dijkstra's single source shortest path algorithm 
 // for a graph represented using adjacency matrix representation 
-void dijkstra(int** graph,int* dist,bool* stpSet, int n, int src) 
+void dijkstra(int** graph,int* dist,int* stpSet, int n, int src) 
 {      // The output array.  dist[i] will hold the shortest 
                       // distance from src to i 
    
-     bool stpSet[n]; // stpSet[i] will be true if vertex i is included in shortest 
+      // stpSet[i] will be true if vertex i is included in shortest 
                      // path tree or shortest distance from src to i is finalized 
    
      // Initialize all distances as INFINITE and stpSet[] as false 
      for (int i = 0; i < n; i++) 
-        dist[i] = INT_MAX, stpSet[i] = false;  
+        dist[i] = INFTY, stpSet[i] = 0;  
      dist[src] = 0; 
      for (int count = 0; count < n-1; count++) 
      { 
@@ -74,7 +74,7 @@ void dijkstra(int** graph,int* dist,bool* stpSet, int n, int src)
        int u = minDistance(dist, stpSet); 
    
        // Mark the picked vertex as processed 
-       stpSet[u] = true; 
+       stpSet[u] = 1; 
    
        // Update dist value of the adjacent vertices of the picked vertex. 
        for (int v = 0; v < n; v++) 
@@ -82,7 +82,7 @@ void dijkstra(int** graph,int* dist,bool* stpSet, int n, int src)
          // Update dist[v] only if is not in stpSet, there is an edge from  
          // u to v, and total weight of path from src to  v through u is  
          // smaller than current value of dist[v] 
-         if (!stpSet[v] && graph[u][v] && dist[u] != INT_MAX  
+         if (!stpSet[v] && graph[u][v] && dist[u] != INFTY  
                                        && dist[u]+graph[u][v] < dist[v]) 
             dist[v] = dist[u] + graph[u][v]; 
      } 
@@ -95,11 +95,11 @@ int main(int argc, char **argv)
 	N = atoi(argv[1]);  //Read the console inputs
     int i, j, k;
 	D_Matrix =(int **) malloc(N * sizeof(int *));
-    stpSet = (bool **) malloc(N * sizeof(bool *));
+    stpSet = (int **) malloc(N * sizeof(int *));
     for (i = 0; i < N; i++)
     {
         D_Matrix[i] = (int *)malloc(N * sizeof(int));
-        stpSet[i] = (bool *)malloc(N * sizeof(bool))
+        stpSet[i] = (int *)malloc(N * sizeof(int))
     }
     makeAdjacency(N);
     clock_t start = clock();  //First time measurement

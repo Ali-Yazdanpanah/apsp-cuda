@@ -1,10 +1,18 @@
 
-int minDistance(int*, bool*, int);
+
+#include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#define INFTY 99999
+
+
+int minDistance(int*, int*, int);
 
 void makeAdjacency(int);
 
-void dijkstra_all(int** graph, int** dist, bool** stpSet, int n);
+void dijkstra_all(int**, int**, int**, int);
 
-void dijkstra(int** ,int* ,bool* , int, int); 
+void dijkstra(int** ,int* ,int* , int, int); 
    
  
