@@ -1,7 +1,7 @@
 nvcc_options= -gencode arch=compute_30,code=sm_30 -lm -D TEST --compiler-options -Wall 
 sources1 = main.c floyd_Warshall_serial.c
 sources2 = Dijkstra.c 
-all: apsp1 apsp2 apsp1cuda
+all: apsp1 apsp2 apsp1cuda apsp2cuda
 
 
 
@@ -14,5 +14,8 @@ apsp2:
 apsp1cuda:
 	nvcc main.cu -o apsp1cuda $(nvcc_options)
 
+apsp2cuda:
+	nvcc Dijkstra.cu -o apsp2cuda $(nvcc_options)
+
 clean:
-	rm -rf apsp1 apsp2 apsp1cuda
+	rm -rf apsp1 apsp2 apsp1cuda apsp2cuda
