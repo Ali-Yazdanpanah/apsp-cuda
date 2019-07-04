@@ -54,8 +54,7 @@ void dijkstra_all(int** graph, int** dist, int** stpSet, int n){
     }
 }
 
-// Function that implements Dijkstra's single source shortest path algorithm 
-// for a graph represented using adjacency matrix representation 
+
 void dijkstra(int** graph,int* dist,int* stpSet, int n, int src) 
 {      // The output array.  dist[i] will hold the shortest 
                       // distance from src to i 
@@ -72,10 +71,8 @@ void dijkstra(int** graph,int* dist,int* stpSet, int n, int src)
        // Pick the minimum distance vertex from the set of vertices not 
        // yet processed. u is always equal to src in the first iteration. 
        int u = minDistance(dist, stpSet , n); 
-   
        // Mark the picked vertex as processed 
        stpSet[u] = 1; 
-   
        // Update dist value of the adjacent vertices of the picked vertex. 
        for (int v = 0; v < n; v++) 
    

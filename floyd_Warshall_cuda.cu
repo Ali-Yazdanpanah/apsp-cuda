@@ -5,15 +5,7 @@
  * One for each cell.
  */
 
-// programmer defined
-const int smp_executions = 8192;
-const int threads_per_block = 128;
-const int threads_per_smp = 2048;
 
-// derived 
-const int blocks_per_smp = threads_per_smp / threads_per_block;
-const dim3 blocks(smp_executions, blocks_per_smp);
-const dim3 threads(threads_per_block);
 
 __global__ void floyd_warshall_parallel_kernel(int* dev_dist, int N, int k) {\
 	int tid = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
