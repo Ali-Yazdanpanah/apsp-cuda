@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <time.h>
 #include <math.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #define MAX_W 9999999
 #define TRUE    1
@@ -22,6 +24,7 @@ typedef struct
 
 Vertex *vertices;	
 Edge *edges;
+int *weights;
 
 int findEdge(Vertex u, Vertex v, Edge *edges, int *weights, int E)
 {
@@ -39,13 +42,12 @@ int findEdge(Vertex u, Vertex v, Edge *edges, int *weights, int E)
 
 void Graph_Randomizer(int V, int E){
 	srand(time(NULL));
-	
 	for(int i = 0; i < V; i++)
 	{
 		Vertex a = { .title =(int) i, .visited=FALSE};
 		vertices[i] = a;
 	}
-	for(i = 0; i < E; i++)
+	for(int i = 0; i < E; i++)
 	{
 		Edge e = {.u = (int) rand()%V , .v = rand()%V};
 		edges[i] = e;
@@ -56,10 +58,9 @@ void Graph_Randomizer(int V, int E){
 
 int main(int argc, char **argv)
 {
-	V = atoi(argv[1]);
-	E = atoi(argv[2]);
+	int V = atoi(argv[1]);
+	int E = atoi(argv[2]);
 
-	int *weights;
 	int *len, *updateLength;
 	Vertex *d_V;
 	Vertex *root;
@@ -70,23 +71,25 @@ int main(int argc, char **argv)
 	float runningTime;
 	vertices = (Vertex *)malloc(sizeof(Vertex) * V);
 	edges = (Edge *)malloc(sizeof(Edge) * E);
+    weights = (int *)malloc(E* sizeof(int));
 	Graph_Randomizer(V, E);
-	weights = (int *)malloc(E* sizeof(int));
 	len = (int *)malloc(V * sizeof(int));
 	updateLength = (int *)malloc(V * sizeof(int));
 	root = (Vertex *)malloc(sizeof(Vertex) * V);
-	for(int count = 0; count < V; count++)
-		root[count] = {count,FALSE};
+	for(int count = 0; count < V; count++){
+		root[count].title = count;
+        root[count].visited = FALSE;
+    }
     clock_t start = clock();
 	for(int count = 0; count < V; count++){
 		root[count].visited = TRUE;
 		len[root[count].title] = 0;
 		updateLength[root[count].title] = 0;
-		for(i = 0; i < V;i++)
+		for(int i = 0; i < V;i++)
 		{
 			if(vertices[i].title != root[count].title)
 			{
-				len[(int)vertices[i].title] = findEdge(root, vertices[i], edges, weights, E);
+				len[(int)vertices[i].title] = findEdge(root[count], vertices[i], edges, weights, E);
 				updateLength[vertices[i].title] = len[(int)vertices[i].title];
 			}
 			else{
@@ -99,12 +102,12 @@ int main(int argc, char **argv)
                         vertices[i].visited = TRUE;
                         for(int v = 0; v < V; v++)
                         {				
-                            int weight = findEdge(vertices[i], vertices[v], edges, weights);
+                            int weight = findEdge(vertices[i], vertices[v], edges, weights, E);
                             if(weight < MAX_W)
                             {	
-                                if(updateLength[v] > length[i] + weight)
+                                if(updateLength[v] > len[i] + weight)
                                 {
-                                    updateLength[v] = length[i] + weight;
+                                    updateLength[v] = len[i] + weight;
                                 }
                             }
                         }
@@ -112,12 +115,12 @@ int main(int argc, char **argv)
                     }
 				for(int j = 0; j < V; j++)
 				{
-                    if(length[j] > updateLength[j])
+                    if(len[j] > updateLength[j])
                         {
                             vertices[j].visited = FALSE;
-                            length[j] = updateLength[j];
+                            len[j] = updateLength[j];
                         }
-                        updateLength[j] = length[j];
+                        updateLength[j] = len[j];
                     }
 		}	
 	}

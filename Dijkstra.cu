@@ -8,7 +8,7 @@
 #define TRUE    1
 #define FALSE   0
 typedef int boolean;
-
+int E,V;
 typedef struct
 {
 	int u;
@@ -46,7 +46,7 @@ __global__ void Find_Vertex(Vertex *vertices, Edge *edges, int *weights, int *le
 		vertices[u].visited = TRUE;
 		for(int v = 0; v < V; v++)
 		{				
-			int weight = findEdge(vertices[u], vertices[v], edges, weights);
+			int weight = findEdge(vertices[u], vertices[v], edges,E);
 			if(weight < MAX_W)
 			{	
 				if(updateLength[v] > length[u] + weight)
@@ -136,7 +136,7 @@ int main(int argc, char **argv)
 		{
 			if(vertices[i].title != root[count].title)
 			{
-				len[(int)vertices[i].title] = findEdge(root, vertices[i], edges, weights, E);
+                len[(int)vertices[i].title] = findEdge(root[count], vertices[i], edges, weights, E);
 				updateLength[vertices[i].title] = len[(int)vertices[i].title];
 			}
 			else{
