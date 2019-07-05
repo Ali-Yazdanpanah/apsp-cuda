@@ -38,7 +38,7 @@ __device__ __host__ int findEdge(Vertex u, Vertex v, Edge *edges, int *weights, 
 }
 
 
-__global__ void Find_Vertex(Vertex *vertices, Edge *edges, int *weights, int *length, int *updateLength, int V)
+__global__ void Find_Vertex(Vertex *vertices, Edge *edges, int *weights, int *length, int *updateLength, int V, int E)
 {
 	int u = threadIdx.x;
 	if(vertices[u].visited == FALSE)
@@ -46,7 +46,7 @@ __global__ void Find_Vertex(Vertex *vertices, Edge *edges, int *weights, int *le
 		vertices[u].visited = TRUE;
 		for(int v = 0; v < V; v++)
 		{				
-			int weight = findEdge(vertices[u], vertices[v], edges,E);
+			int weight = findEdge(vertices[u], vertices[v], edges, weights, E);
 			if(weight < MAX_W)
 			{	
 				if(updateLength[v] > length[u] + weight)
@@ -104,10 +104,6 @@ int main(int argc, char **argv)
 	int *d_W;
 	int *d_L;
 	int *d_C;
-	float runningTime;
-	cudaEvent_t timeStart, timeEnd;
-	cudaEventCreate(&timeStart);
-	cudaEventCreate(&timeEnd);
 	vertices = (Vertex *)malloc(sizeof(Vertex) * V);
 	edges = (Edge *)malloc(sizeof(Edge) * E);
 	Graph_Randomizer(V, E);
@@ -119,20 +115,22 @@ int main(int argc, char **argv)
 	cudaMalloc((void**)&d_E, sizeof(Edge) * E);
 	cudaMalloc((void**)&d_W, E * sizeof(int));
 	cudaMalloc((void**)&d_L, V * sizeof(int));
-	cudaMalloc((void**)&d_C, V * sizeof(int));
-	cudaMemcpy(d_V, vertices, sizeof(Vertex) * V, cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&d_C, V * sizeof(int));
+    cudaMemcpy(d_V, vertices, sizeof(Vertex) * V, cudaMemcpyHostToDevice);
 	cudaMemcpy(d_E, edges, sizeof(Edge) * E, cudaMemcpyHostToDevice);
 	cudaMemcpy(d_W, weights, E * sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_L, len, V * sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_C, updateLength, V * sizeof(int), cudaMemcpyHostToDevice);
-	for(int count = 0; count < V; count++)
-		root[count] = {count,FALSE};
+	for(int count = 0; count < V; count++){
+        root[count].title = count;
+        root[count].visited = FALSE;   
+    }
     clock_t start = clock();
 	for(int count = 0; count < V; count++){
 		root[count].visited = TRUE;
 		len[root[count].title] = 0;
 		updateLength[root[count].title] = 0;
-		for(i = 0; i < V;i++)
+		for(int i = 0; i < V;i++)
 		{
 			if(vertices[i].title != root[count].title)
 			{
@@ -143,10 +141,10 @@ int main(int argc, char **argv)
 				vertices[i].visited = TRUE;
 			}
 		}	
-		cudaMemcpy(d_L, len, size, cudaMemcpyHostToDevice);
-		cudaMemcpy(d_C, updateLength, size, cudaMemcpyHostToDevice);
+		cudaMemcpy(d_L, len, V * sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_C, updateLength, V * sizeof(int), cudaMemcpyHostToDevice);
 		for(int i = 0; i < V; i++){
-				Find_Vertex<<<1, V>>>(d_V, d_E, d_W, d_L, d_C, V);
+				Find_Vertex<<<1, V>>>(d_V, d_E, d_W, d_L, d_C, V, E);
 				for(int j = 0; j < V; j++)
 				{
 					Update_Paths<<<1,V>>>(d_V, d_L, d_C);
