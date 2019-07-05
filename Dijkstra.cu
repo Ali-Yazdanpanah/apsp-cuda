@@ -21,7 +21,7 @@ typedef struct
 	boolean visited;	
 } Vertex;
 
-
+int *weights;
 Vertex *vertices;	
 Edge *edges;
 //Finds the weight of the path from vertex u to vertex v
@@ -82,7 +82,7 @@ void Graph_Randomizer(int V, int E){
 		Vertex a = { .title =(int) i, .visited=FALSE};
 		vertices[i] = a;
 	}
-	for(i = 0; i < E; i++)
+	for(int i = 0; i < E; i++)
 	{
 		Edge e = {.u = (int) rand()%V , .v = rand()%V};
 		edges[i] = e;
@@ -96,7 +96,7 @@ int main(int argc, char **argv)
 	V = atoi(argv[1]);
 	E = atoi(argv[2]);
 
-	int *weights;
+
 	int *len, *updateLength;
 	Vertex *d_V;
 	Vertex *root;
@@ -105,9 +105,9 @@ int main(int argc, char **argv)
 	int *d_L;
 	int *d_C;
 	vertices = (Vertex *)malloc(sizeof(Vertex) * V);
-	edges = (Edge *)malloc(sizeof(Edge) * E);
+    edges = (Edge *)malloc(sizeof(Edge) * E);
+    weights = (int *)malloc(E* sizeof(int));
 	Graph_Randomizer(V, E);
-	weights = (int *)malloc(E* sizeof(int));
 	len = (int *)malloc(V * sizeof(int));
 	updateLength = (int *)malloc(V * sizeof(int));
 	root = (Vertex *)malloc(sizeof(Vertex) * V);
