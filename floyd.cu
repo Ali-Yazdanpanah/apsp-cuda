@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-
+#include <cuda.h>
 
 #define INFTY 99999
 
@@ -36,7 +36,6 @@ void makeAdjacency(int n){   //Set initial values to node distances
     {
         A_Matrix[i] = (int *)malloc(N * sizeof(int));
     }
-
     srand(0);
     for(i = 0; i < N; i++)
     {
@@ -66,34 +65,26 @@ int main(int argc, char **argv){
         D_Matrix[i] = (int *)malloc(N * sizeof(int));
     }
     makeAdjacency(N);
-	int gridx = pow(2, N - 4), gridy = pow(2, N - 4);  //Dimensions of grid
+	int gridx = pow(2, N - 4), gridy = pow(2, N - 4);  
 	int blockx = pow(2, 4), blocky = pow(2, 4);
 	dim3 dimGrid(gridx, gridy);
 	dim3 dimBlock(blockx, blocky);
-	
-	// allocate memory on the device
 	int* device_dist;
 	cudaMalloc( (void**)&device_dist, N*N * sizeof (int) );
-	// initialize dist matrix on device
 	for (int i = 0; i < N; i++)
 		cudaMemcpy(device_dist +i*N, A_Matrix[i], N * sizeof (int),
 							  cudaMemcpyHostToDevice);
-	// For each element of the vertex set
-	
 	clock_t start = clock();
 	for (int k = 0; k < N; k++) {
-		// launch kernel
 		floyd_warshall_parallel_kernel<<<dimGrid,dimBlock>>>(device_dist,N,k);
     	}
-	clock_t end = clock();   //Final time calculation and convert it into seconds
+	clock_t end = clock();   
 	float seconds = (float)(end - start) / CLOCKS_PER_SEC;
 	printf("Elapsed time on gpu = %f sec\n", seconds);
-
 	// return results to dist matrix on host
 	for (int i = 0; i < N; i++)
 		 cudaMemcpy(D_Matrix[i], device_dist +i*N, N * sizeof (int),
 							  cudaMemcpyDeviceToHost);
-
 	
 }
 

@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "floyd_Warshall_serial.h"
 
 #define INFTY 99999
 
@@ -36,6 +35,21 @@ void makeAdjacency(int n){   //Set initial values to node distances
         }
     }
 }
+void floyd_warshall_serial (int** graph, int** dist, int N) {
+	int i, j, k;
+	for (i = 0; i < N; i++)
+		for (j = 0; j < N; j++)
+			dist[i][j] = graph[i][j];
+	for (k = 0; k < N; k++) {
+        	for (i = 0; i < N; i++) {
+            		for (j = 0; j < N; j++) {
+                		if (dist[i][k] + dist[k][j] < dist[i][j])
+                    			dist[i][j] = dist[i][k] + dist[k][j];
+            		}
+        	}
+    	}
+}
+
 
 int main(int argc, char **argv){
     int N;     

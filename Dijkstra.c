@@ -1,110 +1,145 @@
+#include <stdio.h>
+#include <time.h>
+#include <math.h>
 
-#include "Dijkstra.h" 
-   
-int **A_Matrix, **D_Matrix;
-int **stpSet;
+#define MAX_W 9999999
+#define TRUE    1
+#define FALSE   0
+typedef int boolean;
 
-// A utility function to find the vertex with minimum distance value, from 
-// the set of vertices not yet included in shortest path tree 
-int minDistance(int* dist, int* stpSet, int n) 
-{ 
-   // Initialize min value 
-    int min = INFTY, min_index; 
-    for(int j = 0; j < n; j++){
-        if (stpSet[j] == 0 && dist[j] <= min) 
-        min = dist[j], min_index = j;
-    } 
-    return min_index; 
-} 
+typedef struct
+{
+	int u;
+	int v;
+} Edge;
+
+typedef struct 
+{
+	int title;
+	boolean visited;	
+} Vertex;
 
 
-void makeAdjacency(int n){   //Set initial values to node distances
-    int N=n;
-    int i,j;
-    A_Matrix = (int **)malloc(N * sizeof(int *));
-    for (i = 0; i < N; i++)
-    {
-        A_Matrix[i] = (int *)malloc(N * sizeof(int));
-    }
-    srand(0);
-    for(i = 0; i < N; i++)
-    {
-        for(j = i; j < N; j++)
-        {
-            if(i == j){
-                A_Matrix[i][j] = 0;
-            }
-            else{
-                int r = rand() % 10;
-                int val = (r == 5)? INFTY: r;
-                A_Matrix[i][j] = val;
-                A_Matrix[j][i] = val; 
-            }
+Vertex *vertices;	
+Edge *edges;
 
-        }
-    }
+int findEdge(Vertex u, Vertex v, Edge *edges, int *weights, int E)
+{
+	for(int i = 0; i < E; i++)
+	{
+		if(edges[i].u == u.title && edges[i].v == v.title)
+		{
+			return weights[i];
+		}
+	}
+	return MAX_W;
 }
 
 
 
-
-void dijkstra_all(int** graph, int** dist, int** stpSet, int n){
-    for(int i = 0; i < n; i++){
-        dijkstra(graph, dist[i],stpSet[i],n,i);
-    }
+void Graph_Randomizer(int V, int E){
+	srand(time(NULL));
+	
+	for(int i = 0; i < V; i++)
+	{
+		Vertex a = { .title =(int) i, .visited=FALSE};
+		vertices[i] = a;
+	}
+	for(i = 0; i < E; i++)
+	{
+		Edge e = {.u = (int) rand()%V , .v = rand()%V};
+		edges[i] = e;
+		weights[i] = rand()%100;
+	}
 }
 
 
-void dijkstra(int** graph,int* dist,int* stpSet, int n, int src) 
-{      // The output array.  dist[i] will hold the shortest 
-                      // distance from src to i 
-   
-      // stpSet[i] will be true if vertex i is included in shortest 
-                     // path tree or shortest distance from src to i is finalized 
-   
-     // Initialize all distances as INFINITE and stpSet[] as false 
-     for (int i = 0; i < n; i++) 
-        dist[i] = INFTY, stpSet[i] = 0;  
-     dist[src] = 0; 
-     for (int count = 0; count < n-1; count++) 
-     { 
-       // Pick the minimum distance vertex from the set of vertices not 
-       // yet processed. u is always equal to src in the first iteration. 
-       int u = minDistance(dist, stpSet , n); 
-       // Mark the picked vertex as processed 
-       stpSet[u] = 1; 
-       // Update dist value of the adjacent vertices of the picked vertex. 
-       for (int v = 0; v < n; v++) 
-   
-         // Update dist[v] only if is not in stpSet, there is an edge from  
-         // u to v, and total weight of path from src to  v through u is  
-         // smaller than current value of dist[v] 
-         if (!stpSet[v] && graph[u][v] && dist[u] != INFTY  
-                                       && dist[u]+graph[u][v] < dist[v]) 
-            dist[v] = dist[u] + graph[u][v]; 
-     } 
-} 
-   
-// driver program to test above function 
-int main(int argc, char **argv) 
-{ 
-    int N;     
-	N = atoi(argv[1]);  //Read the console inputs
-    int i, j, k;
-	D_Matrix =(int **) malloc(N * sizeof(int *));
-    stpSet = (int **) malloc(N * sizeof(int *));
-    for (i = 0; i < N; i++)
-    {
-        D_Matrix[i] = (int *)malloc(N * sizeof(int));
-        stpSet[i] = (int *)malloc(N * sizeof(int));
-    }
-    makeAdjacency(N);
-    clock_t start = clock();  //First time measurement
-    // algorithm -->
-    dijkstra_all(A_Matrix,D_Matrix,stpSet,N);
-    // <--;	
-	clock_t end = clock();   //Final time calculation and convert it into seconds
+int main(int argc, char **argv)
+{
+	V = atoi(argv[1]);
+	E = atoi(argv[2]);
+
+	int *weights;
+	int *len, *updateLength;
+	Vertex *d_V;
+	Vertex *root;
+	Edge *d_E;
+	int *d_W;
+	int *d_L;
+	int *d_C;
+	float runningTime;
+	vertices = (Vertex *)malloc(sizeof(Vertex) * V);
+	edges = (Edge *)malloc(sizeof(Edge) * E);
+	Graph_Randomizer(V, E);
+	weights = (int *)malloc(E* sizeof(int));
+	len = (int *)malloc(V * sizeof(int));
+	updateLength = (int *)malloc(V * sizeof(int));
+	root = (Vertex *)malloc(sizeof(Vertex) * V);
+	for(int count = 0; count < V; count++)
+		root[count] = {count,FALSE};
+    clock_t start = clock();
+	for(int count = 0; count < V; count++){
+		root[count].visited = TRUE;
+		len[root[count].title] = 0;
+		updateLength[root[count].title] = 0;
+		for(i = 0; i < V;i++)
+		{
+			if(vertices[i].title != root[count].title)
+			{
+				len[(int)vertices[i].title] = findEdge(root, vertices[i], edges, weights, E);
+				updateLength[vertices[i].title] = len[(int)vertices[i].title];
+			}
+			else{
+				vertices[i].visited = TRUE;
+			}
+		}	
+		for(int i = 0; i < V; i++){
+                if(vertices[i].visited == FALSE)
+                    {
+                        vertices[i].visited = TRUE;
+                        for(int v = 0; v < V; v++)
+                        {				
+                            int weight = findEdge(vertices[i], vertices[v], edges, weights);
+                            if(weight < MAX_W)
+                            {	
+                                if(updateLength[v] > length[i] + weight)
+                                {
+                                    updateLength[v] = length[i] + weight;
+                                }
+                            }
+                        }
+
+                    }
+				for(int j = 0; j < V; j++)
+				{
+                    if(length[j] > updateLength[j])
+                        {
+                            vertices[j].visited = FALSE;
+                            length[j] = updateLength[j];
+                        }
+                        updateLength[j] = length[j];
+                    }
+		}	
+	}
+    	
+	clock_t end = clock();   
 	float seconds = (float)(end - start) / CLOCKS_PER_SEC;
-	printf("Elapsed time = %f sec\n", seconds);
-    return 0; 
-} 
+	printf("Elapsed time on CPU = %f sec\n", seconds);
+}
+
+
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+

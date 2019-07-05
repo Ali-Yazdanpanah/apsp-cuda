@@ -1,175 +1,176 @@
-
-#include <time.h>
 #include <stdio.h>
-#include <stdlib.h>
+#include <time.h>
 #include <math.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
 
-#define INFTY 99999
+#define MAX_W 9999999
+#define TRUE    1
+#define FALSE   0
+typedef int boolean;
 
-int **A_Matrix, **D_Matrix;
-int **stpSet;
+typedef struct
+{
+	int u;
+	int v;
+} Edge;
 
-// A utility function to find the vertex with minimum distance value, from 
-// the set of vertices not yet included in shortest path tree 
-__device__ int minDistance(int* dist, int* stpSet, int n) 
-{ 
-   // Initialize min value 
-    int min = INFTY, min_index; 
-    for(int j = 0; j < n; j++){
-        if (stpSet[j] == 0 && dist[j] <= min) 
-        min = dist[j], min_index = j;
-    } 
-    return min_index; 
-} 
+typedef struct 
+{
+	int title;
+	boolean visited;	
+} Vertex;
 
 
-__device__ void makeAdjacency(int n){   //Set initial values to node distances
-    int N=n;
-    int i,j;
-    A_Matrix = (int **)malloc(N * sizeof(int *));
-    for (i = 0; i < N; i++)
-    {
-        A_Matrix[i] = (int *)malloc(N * sizeof(int));
-    }
-    srand(0);
-    for(i = 0; i < N; i++)
-    {
-        for(j = i; j < N; j++)
-        {
-            if(i == j){
-                A_Matrix[i][j] = 0;
-            }
-            else{
-                int r = rand() % 10;
-                int val = (r == 5)? INFTY: r;
-                A_Matrix[i][j] = val;
-                A_Matrix[j][i] = val; 
-            }
-
-        }
-    }
+Vertex *vertices;	
+Edge *edges;
+//Finds the weight of the path from vertex u to vertex v
+__device__ __host__ int findEdge(Vertex u, Vertex v, Edge *edges, int *weights, int E)
+{
+	for(int i = 0; i < E; i++)
+	{
+		if(edges[i].u == u.title && edges[i].v == v.title)
+		{
+			return weights[i];
+		}
+	}
+	return MAX_W;
 }
 
 
+__global__ void Find_Vertex(Vertex *vertices, Edge *edges, int *weights, int *length, int *updateLength, int V)
+{
+	int u = threadIdx.x;
+	if(vertices[u].visited == FALSE)
+	{
+		vertices[u].visited = TRUE;
+		for(int v = 0; v < V; v++)
+		{				
+			int weight = findEdge(vertices[u], vertices[v], edges, weights);
+			if(weight < MAX_W)
+			{	
+				if(updateLength[v] > length[u] + weight)
+				{
+					updateLength[v] = length[u] + weight;
+				}
+			}
+		}
 
-
-
-
-__global__ void dijkstra_all(int** graph, int** dist, int** stpSet, int n){
-    int tid = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-    if(tid < n)
-        dijkstra(graph, dist[tid], stpSet[tid], n, tid);
-}
-
-// Function that implements Dijkstra's single source shortest path algorithm 
-// for a graph represented using adjacency matrix representation 
-__device__ void dijkstra(int** graph,int* dist,int* stpSet, int n, int src) 
-{      // The output array.  dist[i] will hold the shortest 
-                      // distance from src to i 
-   
-    for (int i = 0; i < n; i++) 
-        dist[i] = INFTY, stpSet[i] = 0;  
-    dist[src] = 0; 
-    for (int count = 0; count < n-1; count++) 
-    { 
-        // Pick the minimum distance vertex from the set of vertices not 
-        // yet processed. u is always equal to src in the first iteration. 
-        int u = minDistance(dist, stpSet , n); 
-        // Mark the picked vertex as processed 
-        stpSet[u] = 1; 
-        // Update dist value of the adjacent vertices of the picked vertex. 
-        for (int v = 0; v < n; v++) 
-                 
-        // Update dist[v] only if is not in stpSet, there is an edge from  
-        // u to v, and total weight of path from src to  v through u is  
-        // smaller than current value of dist[v] 
-            if (!stpSet[v] && graph[u][v] && dist[u] != INFTY  
-                                    && dist[u]+graph[u][v] < dist[v]) 
-                dist[v] = dist[u] + graph[u][v]; 
-            } 
-} 
-
-/* Serial
-
-// driver program to test above function 
-int main(int argc, char **argv) 
-{ 
-    int N;     
-	N = atoi(argv[1]);  //Read the console inputs
-    int i, j, k;
-	D_Matrix =(int **) malloc(N * sizeof(int *));
-    stpSet = (int **) malloc(N * sizeof(int *));
-    for (i = 0; i < N; i++)
-    {
-        D_Matrix[i] = (int *)malloc(N * sizeof(int));
-        stpSet[i] = (int *)malloc(N * sizeof(int));
-    }
-    makeAdjacency(N);
-    clock_t start = clock();  //First time measurement
-    // algorithm -->
-    dijkstra_all(A_Matrix,D_Matrix,stpSet,N);
-    // <--;	
-	clock_t end = clock();   //Final time calculation and convert it into seconds
-	float seconds = (float)(end - start) / CLOCKS_PER_SEC;
-	printf("Elapsed time = %f sec\n", seconds);
-    return 0; 
-} 
-
-
-*/
-
-
-
-
-int main(int argc, char **argv){
-    int N;     
-	N = atoi(argv[1]);  //Read the console inputs
-    int i;
-    int *temp;
-    temp = (int)malloc(N * sizeof(int));
-    for(i = 0; i < N; i++)
-    {
-        temp[i] = 0; 
-    }
-	D_Matrix = (int **)malloc(N * sizeof(int *));
-    for (i = 0; i < N; i++)
-    {
-        D_Matrix[i] = (int *)malloc(N * sizeof(int));
-    }
-    makeAdjacency(N);
-	int gridx = pow(2, N - 4), gridy = pow(2, N - 4);  //Dimensions of grid
-	int blockx = pow(2, 4), blocky = pow(2, 4);
-	dim3 dimGrid(gridx, gridy);
-	dim3 dimBlock(blockx, blocky);
+	}
 	
-	// allocate memory on the device
-	int* device_dist;
-    cudaMalloc( (void**)&device_dist, N*N * sizeof (int) );
-    cudaMalloc( (void**)&device_graph, N*N * sizeof (int));
-    cudaMalloc( (void**)&device_stpSet, N*N * sizeof (int));
-    
-    cudaMemcpy(device_stpSet, temp, N * sizeof(int), cudaMemcpyHostToDevice);
-    // initialize dist matrix on device
-    for (int i = 0; i < N; i++){
-		cudaMemcpy(device_dist +i*N, A_Matrix[i], N * sizeof (int),
-                              cudaMemcpyHostToDevice);
-    }
-    for (int i = 0; i < N; i++){
-		cudaMemcpy(device_graph +i*N, A_Matrix[i], N * sizeof (int),
-                              cudaMemcpyHostToDevice);
-    }
-    dijkstra_all(int** graph, int** dist, int** stpSet, int n)
-	clock_t start = clock();
-	dijkstra_all<<<dimGrid,dimBlock>>>(device_graph,device_dist,device_stpSet,N);
-	clock_t end = clock();   //Final time calculation and convert it into seconds
-	float seconds = (float)(end - start) / CLOCKS_PER_SEC;
-	printf("Elapsed time on gpu = %f sec\n", seconds);
+}
 
-	// return results to dist matrix on host
-	for (int i = 0; i < N; i++)
-		 cudaMemcpy(D_Matrix[i], device_dist +i*N, N * sizeof (int),
-							  cudaMemcpyDeviceToHost);	
+//Updates the shortest path array (length)
+__global__ void Update_Paths(Vertex *vertices, int *length, int *updateLength)
+{
+	int u = threadIdx.x;
+	if(length[u] > updateLength[u])
+	{
+		vertices[u].visited = FALSE;
+		length[u] = updateLength[u];
+	}
+	updateLength[u] = length[u];
 }
 
 
+
+void Graph_Randomizer(int V, int E){
+	srand(time(NULL));
+	
+	for(int i = 0; i < V; i++)
+	{
+		Vertex a = { .title =(int) i, .visited=FALSE};
+		vertices[i] = a;
+	}
+	for(i = 0; i < E; i++)
+	{
+		Edge e = {.u = (int) rand()%V , .v = rand()%V};
+		edges[i] = e;
+		weights[i] = rand()%100;
+	}
+}
+
+//Runs the program
+int main(int argc, char **argv)
+{
+	V = atoi(argv[1]);
+	E = atoi(argv[2]);
+
+	int *weights;
+	int *len, *updateLength;
+	Vertex *d_V;
+	Vertex *root;
+	Edge *d_E;
+	int *d_W;
+	int *d_L;
+	int *d_C;
+	float runningTime;
+	cudaEvent_t timeStart, timeEnd;
+	cudaEventCreate(&timeStart);
+	cudaEventCreate(&timeEnd);
+	vertices = (Vertex *)malloc(sizeof(Vertex) * V);
+	edges = (Edge *)malloc(sizeof(Edge) * E);
+	Graph_Randomizer(V, E);
+	weights = (int *)malloc(E* sizeof(int));
+	len = (int *)malloc(V * sizeof(int));
+	updateLength = (int *)malloc(V * sizeof(int));
+	root = (Vertex *)malloc(sizeof(Vertex) * V);
+	cudaMalloc((void**)&d_V, sizeof(Vertex) * V);
+	cudaMalloc((void**)&d_E, sizeof(Edge) * E);
+	cudaMalloc((void**)&d_W, E * sizeof(int));
+	cudaMalloc((void**)&d_L, V * sizeof(int));
+	cudaMalloc((void**)&d_C, V * sizeof(int));
+	cudaMemcpy(d_V, vertices, sizeof(Vertex) * V, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_E, edges, sizeof(Edge) * E, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_W, weights, E * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_L, len, V * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_C, updateLength, V * sizeof(int), cudaMemcpyHostToDevice);
+	for(int count = 0; count < V; count++)
+		root[count] = {count,FALSE};
+    clock_t start = clock();
+	for(int count = 0; count < V; count++){
+		root[count].visited = TRUE;
+		len[root[count].title] = 0;
+		updateLength[root[count].title] = 0;
+		for(i = 0; i < V;i++)
+		{
+			if(vertices[i].title != root[count].title)
+			{
+				len[(int)vertices[i].title] = findEdge(root, vertices[i], edges, weights, E);
+				updateLength[vertices[i].title] = len[(int)vertices[i].title];
+			}
+			else{
+				vertices[i].visited = TRUE;
+			}
+		}	
+		cudaMemcpy(d_L, len, size, cudaMemcpyHostToDevice);
+		cudaMemcpy(d_C, updateLength, size, cudaMemcpyHostToDevice);
+		for(int i = 0; i < V; i++){
+				Find_Vertex<<<1, V>>>(d_V, d_E, d_W, d_L, d_C, V);
+				for(int j = 0; j < V; j++)
+				{
+					Update_Paths<<<1,V>>>(d_V, d_L, d_C);
+				}
+		}	
+    }
+	clock_t end = clock();   
+	float seconds = (float)(end - start) / CLOCKS_PER_SEC;
+	printf("Elapsed time on GPU = %f sec\n", seconds);
+}
+
+
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
 
