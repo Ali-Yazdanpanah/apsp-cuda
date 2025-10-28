@@ -1,0 +1,25 @@
+binary,density,iteration,label,size,time_ms
+floyd_cpu,0.3,0,Floyd CPU,128,3.4609
+floyd_cpu,0.3,1,Floyd CPU,128,4.10245
+floyd_cpu,0.3,0,Floyd CPU,256,22.78022
+floyd_cpu,0.3,1,Floyd CPU,256,23.43508
+floyd_cpu,0.3,0,Floyd CPU,512,187.559679
+floyd_cpu,0.3,1,Floyd CPU,512,177.311481
+floyd_gpu,0.3,0,Floyd GPU,128,0.003072
+floyd_gpu,0.3,1,Floyd GPU,128,0.012352
+floyd_gpu,0.3,0,Floyd GPU,256,0.003072
+floyd_gpu,0.3,1,Floyd GPU,256,0.001984
+floyd_gpu,0.3,0,Floyd GPU,512,0.138496
+floyd_gpu,0.3,1,Floyd GPU,512,0.002208
+dijkstra_cpu,0.15,0,Dijkstra CPU,128,7.612487
+dijkstra_cpu,0.15,1,Dijkstra CPU,128,13.297208
+dijkstra_cpu,0.15,0,Dijkstra CPU,256,55.332639
+dijkstra_cpu,0.15,1,Dijkstra CPU,256,51.783727
+dijkstra_cpu,0.15,0,Dijkstra CPU,512,403.35272
+dijkstra_cpu,0.15,1,Dijkstra CPU,512,422.855251
+dijkstra_gpu,0.15,0,Dijkstra GPU,128,25.093699
+dijkstra_gpu,0.15,1,Dijkstra GPU,128,34.720715
+dijkstra_gpu,0.15,0,Dijkstra GPU,256,42.277288
+dijkstra_gpu,0.15,1,Dijkstra GPU,256,37.891922
+dijkstra_gpu,0.15,0,Dijkstra GPU,512,76.277412
+dijkstra_gpu,0.15,1,Dijkstra GPU,512,86.35738
