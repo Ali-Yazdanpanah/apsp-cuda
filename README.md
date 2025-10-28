@@ -89,12 +89,9 @@ bin/dijkstra_cpu --size 512 --density 0.15 --verify --quiet
   allocated (e.g., when running inside a sandbox without device access).
 - The hybrid CUDA Dijkstra currently relies on host-side vertex selection; a
   fully device-side priority queue is a natural next step.
-- Suggested extensions:
+- TODO:
   1. Add directed graph visualisation using NetworkX for small instances.
   2. Integrate unit tests covering graph generation edge cases.
   3. Capture energy metrics via NVIDIA Nsight on supported hardware.
 
----
 
-Made with an emphasis on readability, reproducibility, and storytelling for a
-portfolio-ready HPC showcase.
