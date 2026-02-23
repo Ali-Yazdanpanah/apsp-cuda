@@ -28,6 +28,32 @@ Dijkstra Warp-Shuffle  & 479.75 & 215  & 54  & $\sim$58$\times$  \\
 
 ---
 
+## Performance Figures
+
+### Execution Time vs. Problem Size
+
+![Execution Time vs. N](reports/figures/execution_time_vs_n.png)
+
+**Analytics:** Log-log plot of execution time (ms) vs $N$. The approximately linear slope of 3 confirms **$O(N^3)$** scaling for both Floyd-Warshall and Dijkstra. Floyd GPU consistently outperforms Dijkstra GPU across all sizes (e.g. 81.8 ms vs 479.8 ms at $N=2048$). The shaded bands show min–max spread across 3 iterations. At small $N$, relative variability is higher due to kernel launch overhead; at large $N$, execution time dominates and spread tightens.
+
+---
+
+### Throughput vs. Problem Size
+
+![Throughput vs. Problem Size](reports/figures/throughput_vs_n.png)
+
+**Analytics:** Effective throughput (GB/s) vs $N$ on a log x-axis. Floyd-Warshall peaks near **~1500 GB/s** at $N \approx 1024$, exceeding the RTX 3060’s physical bandwidth (~360 GB/s) due to shared-memory reuse. Scatter points overlay individual run throughput to highlight warm-up and run-to-run variance. Dijkstra peaks earlier (~250–512) at ~350–475 GB/s and declines to ~215 GB/s at $N=2048$ and ~127 GB/s at $N=4096$, reflecting irregular access and synchronisation overhead.
+
+---
+
+### Runtime Comparison (All Implementations)
+
+![Runtime Comparison](reports/figures/runtime_comparison.png)
+
+**Analytics:** Comparison of all four implementations (Floyd CPU/GPU, Dijkstra CPU/GPU) across problem sizes. When GPU data is available, the GPU implementations dominate; Floyd GPU shows the steepest performance advantage. Use `scripts/plot_benchmarks.py` with `--logy` for logarithmic y-axis to better visualise the large dynamic range between CPU and GPU runtimes.
+
+---
+
 ## Hardware–Software Mapping (Ampere Architecture)
 
 The GPU kernels are explicitly designed for the RTX 3060’s Ampere microarchitecture. The following design choices directly target its shared-memory layout, register file, and occupancy model.
@@ -74,9 +100,7 @@ This indicates a maximum of 1024 threads per block (32×32). The compiler can tr
 
 ## Throughput Analysis
 
-The figure below illustrates effective throughput (GB/s) vs problem size $N$:
-
-![Throughput vs. Problem Size](reports/figures/throughput_vs_n.png)
+See the **Throughput vs. Problem Size** figure above for the full plot. Key interpretations:
 
 ### Floyd-Warshall: Super-Physical Throughput
 
@@ -97,7 +121,7 @@ Two factors dominate:
 
 ## Scalability
 
-Execution time follows **$O(N^3)$** scaling, as confirmed by log-log plots of execution time vs $N$: the slope is approximately 3 for both algorithms.
+Execution time follows **$O(N^3)$** scaling, as confirmed by the **Execution Time vs. Problem Size** figure: on the log-log plot, the slope is approximately 3 for both algorithms.
 
 ### Warm-Up at Low $N$
 
