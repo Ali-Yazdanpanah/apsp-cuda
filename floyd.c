@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 
+#include "apsp_cpu.h"
 #include "graph_utils.h"
 
 #include <errno.h>
@@ -153,32 +154,7 @@ static double monotonic_time_ms(void) {
 }
 
 static void floyd_warshall(const MatrixGraph *graph, int *dist) {
-    const size_t n = graph->order;
-    const int inf = graph->infinity;
-
-    for (size_t i = 0; i < n * n; ++i) {
-        dist[i] = graph->weights[i];
-    }
-
-    for (size_t k = 0; k < n; ++k) {
-        for (size_t i = 0; i < n; ++i) {
-            const int dik = dist[matrix_index(graph, i, k)];
-            if (dik == inf) {
-                continue;
-            }
-            for (size_t j = 0; j < n; ++j) {
-                const int dkj = dist[matrix_index(graph, k, j)];
-                if (dkj == inf) {
-                    continue;
-                }
-                const int idx = matrix_index(graph, i, j);
-                const long candidate = (long)dik + (long)dkj;
-                if (candidate < dist[idx]) {
-                    dist[idx] = (int)candidate;
-                }
-            }
-        }
-    }
+    floyd_warshall_cpu(graph, dist);
 }
 
 static int ensure_csv_header(const char *path) {

@@ -1,6 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
 
+#include "apsp_cpu.h"
 #include "graph_utils.h"
+#include "verify_util.h"
 
 #include <errno.h>
 #include <getopt.h>
@@ -169,86 +171,8 @@ static double monotonic_time_ms(void) {
     return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
 }
 
-static void floyd_warshall_reference(const MatrixGraph *graph, int *dist) {
-    const size_t n = graph->order;
-    const int inf = graph->infinity;
-
-    for (size_t i = 0; i < n * n; ++i) {
-        dist[i] = graph->weights[i];
-    }
-
-    for (size_t k = 0; k < n; ++k) {
-        for (size_t i = 0; i < n; ++i) {
-            const int dik = dist[matrix_index(graph, i, k)];
-            if (dik == inf) {
-                continue;
-            }
-            for (size_t j = 0; j < n; ++j) {
-                const int dkj = dist[matrix_index(graph, k, j)];
-                if (dkj == inf) {
-                    continue;
-                }
-                const int idx = matrix_index(graph, i, j);
-                const long candidate = (long)dik + (long)dkj;
-                if (candidate < dist[idx]) {
-                    dist[idx] = (int)candidate;
-                }
-            }
-        }
-    }
-}
-
 static void dijkstra_all_pairs(const MatrixGraph *graph, int *out) {
-    const size_t n = graph->order;
-    const int inf = graph->infinity;
-    int *dist = (int *)malloc(n * sizeof(int));
-    unsigned char *visited = (unsigned char *)malloc(n);
-
-    if (!dist || !visited) {
-        fprintf(stderr, "Allocation failure in dijkstra_all_pairs\n");
-        free(dist);
-        free(visited);
-        return;
-    }
-
-    for (size_t source = 0; source < n; ++source) {
-        for (size_t i = 0; i < n; ++i) {
-            dist[i] = inf;
-            visited[i] = 0;
-        }
-        dist[source] = 0;
-
-        for (size_t iter = 0; iter < n; ++iter) {
-            size_t u = SIZE_MAX;
-            int best_dist = inf;
-            for (size_t v = 0; v < n; ++v) {
-                if (!visited[v] && dist[v] < best_dist) {
-                    best_dist = dist[v];
-                    u = v;
-                }
-            }
-            if (u == SIZE_MAX) {
-                break;
-            }
-            visited[u] = 1;
-
-            for (size_t v = 0; v < n; ++v) {
-                const int weight = graph->weights[matrix_index(graph, u, v)];
-                if (weight == inf) {
-                    continue;
-                }
-                const long candidate = (long)best_dist + (long)weight;
-                if (candidate < dist[v]) {
-                    dist[v] = (int)candidate;
-                }
-            }
-        }
-
-        memcpy(out + source * n, dist, n * sizeof(int));
-    }
-
-    free(dist);
-    free(visited);
+    dijkstra_apsp_cpu(graph, out);
 }
 
 static int ensure_csv_header(const char *path) {
@@ -321,17 +245,9 @@ static int verify_results(const MatrixGraph *graph, const int *dijkstra_dist) {
         fprintf(stderr, "Failed to allocate memory for verification\n");
         return -1;
     }
-    floyd_warshall_reference(graph, reference);
+    floyd_warshall_cpu(graph, reference);
 
-    int mismatches = 0;
-    for (size_t row = 0; row < n; ++row) {
-        for (size_t col = 0; col < n; ++col) {
-            const size_t idx = matrix_index(graph, row, col);
-            if (dijkstra_dist[idx] != reference[idx]) {
-                ++mismatches;
-            }
-        }
-    }
+    const int mismatches = verify_matrices(reference, dijkstra_dist, n, 10);
 
     free(reference);
     return mismatches;
@@ -410,7 +326,7 @@ int main(int argc, char **argv) {
         } else if (mismatches == 0) {
             printf("Verification: PASS (Dijkstra matches Floyd-Warshall)\n");
         } else {
-            printf("Verification: FAIL (%d mismatched entries)\n", mismatches);
+            printf("Verification: FAIL (%d mismatched entries, first 10 shown above)\n", mismatches);
         }
     }
 

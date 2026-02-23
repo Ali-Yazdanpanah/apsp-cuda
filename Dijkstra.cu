@@ -1,6 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
 
+#include "apsp_cpu.h"
 #include "graph_utils.h"
+#include "verify_util.h"
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -14,7 +16,7 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#define CUDA_CALL(expr)                                                           \
+#define checkCudaErrors(expr)                                                     \
     do {                                                                          \
         cudaError_t _err = (expr);                                                \
         if (_err != cudaSuccess) {                                                \
@@ -42,90 +44,189 @@ typedef struct {
 
 typedef struct {
     double elapsed_ms;
+    double effective_gbps;
+    double gflops;
 } RunResult;
 
-__global__ void relax_neighbors_kernel(const int *weights,
-                                       const int *dist_current,
-                                       int *dist_next,
-                                       int n,
-                                       int source_vertex,
-                                       int source_distance,
-                                       int infinity) {
-    const int v = blockIdx.x * blockDim.x + threadIdx.x;
-    if (v >= n) {
-        return;
-    }
+#define WARP_SIZE 32
 
-    const int current = dist_current[v];
-    if (source_distance >= infinity) {
-        dist_next[v] = current;
-        return;
+/* Warp-level min reduction for (dist, vertex) pair using shuffle.
+ * All lanes participate; lane 0 gets the global min (dist, vertex) in the warp. */
+static __device__ __forceinline__ void warp_reduce_min_pair(int *dist, int *vertex) {
+    int my_d = *dist;
+    int my_v = *vertex;
+#pragma unroll
+    for (int offset = WARP_SIZE / 2; offset > 0; offset >>= 1) {
+        int other_d = __shfl_down_sync(0xffffffffu, my_d, offset);
+        int other_v = __shfl_down_sync(0xffffffffu, my_v, offset);
+        if (other_d < my_d || (other_d == my_d && other_v < my_v)) {
+            my_d = other_d;
+            my_v = other_v;
+        }
     }
+    *dist = my_d;
+    *vertex = my_v;
+}
 
-    const int w = weights[source_vertex * n + v];
-    if (w >= infinity) {
-        dist_next[v] = current;
-        return;
+/* Block-level min-reduction using warp shuffles. Each warp reduces to lane 0,
+ * then warp 0 reduces across warp results. Returns (best_vertex, best_dist). */
+static __device__ void block_reduce_min_pair(int *out_vertex, int *out_dist,
+                                             int my_vertex, int my_dist) {
+    __shared__ int s_vertex[32]; /* Max warps per block */
+    __shared__ int s_dist[32];
+
+    const int lane = threadIdx.x % WARP_SIZE;
+    const int warp_id = threadIdx.x / WARP_SIZE;
+
+    warp_reduce_min_pair(&my_dist, &my_vertex);
+
+    /* Lane 0 of each warp writes to shared memory */
+    if (lane == 0) {
+        s_vertex[warp_id] = my_vertex;
+        s_dist[warp_id] = my_dist;
     }
+    __syncthreads();
 
-    const long candidate = (long)source_distance + (long)w;
-    if (candidate < current) {
-        dist_next[v] = (int)candidate;
-    } else {
-        dist_next[v] = current;
+    /* Warp 0 reduces the per-warp results using shuffles */
+    if (warp_id == 0) {
+        my_vertex = (lane < blockDim.x / WARP_SIZE) ? s_vertex[lane] : -1;
+        my_dist = (lane < blockDim.x / WARP_SIZE) ? s_dist[lane] : 0x7fffffff;
+        if (lane >= blockDim.x / WARP_SIZE) {
+            my_dist = 0x7fffffff; /* ensure non-participating lanes have inf */
+        }
+        warp_reduce_min_pair(&my_dist, &my_vertex);
+        if (lane == 0) {
+            *out_vertex = my_vertex;
+            *out_dist = my_dist;
+        }
+    }
+    __syncthreads();
+}
+
+/* Fully device-side Dijkstra: one block per source. Uses warp shuffles for
+ * block-level min-reduction to find the next closest vertex. */
+__global__ __launch_bounds__(256, 4) void dijkstra_sssp_block(
+    const int *__restrict__ weights,
+    int *__restrict__ dist,
+    int n,
+    int inf,
+    int base_source) {
+    const int source = base_source + blockIdx.x;
+    if (source >= n) return;
+
+    /* Each block writes to dist[source * n : (source+1) * n] */
+    int *my_dist = dist + (size_t)source * n;
+
+    __shared__ unsigned char visited[4096]; /* Max vertices; use dynamic if n > 4096 */
+    __shared__ int s_best_vertex;
+    __shared__ int s_best_dist;
+
+    /* Initialize: dist[source]=0, rest=inf. visited=0 for all (source picked in 1st iter) */
+    for (int v = threadIdx.x; v < n; v += blockDim.x) {
+        my_dist[v] = (v == source) ? 0 : inf;
+        if (v < 4096) visited[v] = 0;
+    }
+    __syncthreads();
+
+    for (int iter = 0; iter < n; ++iter) {
+        /* Each thread finds local min among unvisited vertices in its chunk */
+        int local_best_v = -1;
+        int local_best_d = 0x7fffffff;
+        for (int v = threadIdx.x; v < n; v += blockDim.x) {
+            if (v < 4096 && visited[v]) continue;
+            if (v >= 4096) {
+                /* Fallback for n > 4096: use shared flag or __ldg. For simplicity
+                 * we assume n <= 4096; else we'd need a different visited scheme. */
+                continue;
+            }
+            int d = my_dist[v];
+            if (d < local_best_d) {
+                local_best_d = d;
+                local_best_v = v;
+            }
+        }
+        if (local_best_v < 0) local_best_d = 0x7fffffff;
+
+        /* Block-level min-reduction via warp shuffles */
+        block_reduce_min_pair(&s_best_vertex, &s_best_dist,
+                              local_best_v, local_best_d);
+
+        const int u = s_best_vertex;
+        const int best = s_best_dist;
+        if (u < 0 || best >= inf) break;
+
+        if (u < 4096) visited[u] = 1;
+
+        /* Relax: all threads relax edges from u to their assigned vertices */
+        for (int v = threadIdx.x; v < n; v += blockDim.x) {
+            const int w = weights[(size_t)u * n + v];
+            if (w >= inf) continue;
+            const long candidate = (long)best + (long)w;
+            if (candidate < my_dist[v]) {
+                my_dist[v] = (int)candidate;
+            }
+        }
+        __syncthreads();
     }
 }
 
-static void dijkstra_reference(const MatrixGraph *graph, int *out) {
-    const size_t n = graph->order;
-    const int inf = graph->infinity;
-    int *dist = (int *)malloc(n * sizeof(int));
-    unsigned char *visited = (unsigned char *)malloc(n);
-    if (!dist || !visited) {
-        fprintf(stderr, "Reference Dijkstra allocation failed\n");
-        free(dist);
-        free(visited);
-        return;
+/* Variant for n > 4096: use global visited in a separate array. We'll allocate
+ * visited as device memory of size n * num_sources, or use a single bitmap.
+ * For now, restrict to n <= 4096 to keep shared memory simple. */
+__global__ __launch_bounds__(256, 4) void dijkstra_sssp_block_large(
+    const int *__restrict__ weights,
+    int *__restrict__ dist,
+    unsigned char *__restrict__ visited,
+    int n,
+    int inf,
+    int base_source) {
+    const int source = base_source + blockIdx.x;
+    if (source >= n) return;
+
+    int *my_dist = dist + (size_t)source * n;
+    unsigned char *my_visited = visited + (size_t)source * n;
+
+    __shared__ int s_best_vertex;
+    __shared__ int s_best_dist;
+
+    for (int v = threadIdx.x; v < n; v += blockDim.x) {
+        my_dist[v] = (v == source) ? 0 : inf;
+        my_visited[v] = 0;
     }
+    __syncthreads();
 
-    for (size_t src = 0; src < n; ++src) {
-        for (size_t i = 0; i < n; ++i) {
-            dist[i] = inf;
-            visited[i] = 0;
-        }
-        dist[src] = 0;
-
-        for (size_t iter = 0; iter < n; ++iter) {
-            size_t u = SIZE_MAX;
-            int best = inf;
-            for (size_t v = 0; v < n; ++v) {
-                if (!visited[v] && dist[v] < best) {
-                    best = dist[v];
-                    u = v;
-                }
-            }
-            if (u == SIZE_MAX) {
-                break;
-            }
-            visited[u] = 1;
-
-            for (size_t v = 0; v < n; ++v) {
-                const int weight = graph->weights[u * n + v];
-                if (weight >= inf) {
-                    continue;
-                }
-                const long candidate = (long)best + (long)weight;
-                if (candidate < dist[v]) {
-                    dist[v] = (int)candidate;
-                }
+    for (int iter = 0; iter < n; ++iter) {
+        int local_best_v = -1;
+        int local_best_d = 0x7fffffff;
+        for (int v = threadIdx.x; v < n; v += blockDim.x) {
+            if (my_visited[v]) continue;
+            int d = my_dist[v];
+            if (d < local_best_d) {
+                local_best_d = d;
+                local_best_v = v;
             }
         }
+        if (local_best_v < 0) local_best_d = 0x7fffffff;
 
-        memcpy(out + src * n, dist, n * sizeof(int));
+        block_reduce_min_pair(&s_best_vertex, &s_best_dist,
+                              local_best_v, local_best_d);
+
+        const int u = s_best_vertex;
+        const int best = s_best_dist;
+        if (u < 0 || best >= inf) break;
+
+        my_visited[u] = 1;
+
+        for (int v = threadIdx.x; v < n; v += blockDim.x) {
+            const int w = weights[(size_t)u * n + v];
+            if (w >= inf) continue;
+            const long candidate = (long)best + (long)w;
+            if (candidate < my_dist[v]) {
+                my_dist[v] = (int)candidate;
+            }
+        }
+        __syncthreads();
     }
-
-    free(dist);
-    free(visited);
 }
 
 static Options default_options(void) {
@@ -269,12 +370,12 @@ static int ensure_csv_header(const char *path) {
         fprintf(stderr, "Failed to open CSV file %s: %s\n", path, strerror(errno));
         return -1;
     }
-    fprintf(file, "algorithm,size,density,max_weight,infinity,seed,block_dim,iteration,wall_time_ms\n");
+    fprintf(file, "algorithm,size,density,max_weight,infinity,seed,block_dim,iteration,wall_time_ms,effective_gbps,gflops\n");
     fclose(file);
     return 0;
 }
 
-static void append_csv(const Options *opt, int iteration, double time_ms) {
+static void append_csv(const Options *opt, int iteration, const RunResult *r) {
     if (!opt->csv_path) {
         return;
     }
@@ -286,7 +387,7 @@ static void append_csv(const Options *opt, int iteration, double time_ms) {
         fprintf(stderr, "Failed to append to CSV file %s: %s\n", opt->csv_path, strerror(errno));
         return;
     }
-    fprintf(file, "dijkstra-gpu,%zu,%.4f,%d,%d,%" PRIu64 ",%d,%d,%.6f\n",
+    fprintf(file, "dijkstra-gpu,%zu,%.4f,%d,%d,%" PRIu64 ",%d,%d,%.6f,%.2f,%.2f\n",
             opt->size,
             opt->density,
             opt->max_weight,
@@ -294,14 +395,10 @@ static void append_csv(const Options *opt, int iteration, double time_ms) {
             opt->seed,
             opt->block_dim,
             iteration,
-            time_ms);
+            r->elapsed_ms,
+            r->effective_gbps,
+            r->gflops);
     fclose(file);
-}
-
-static double monotonic_time_ms(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
 }
 
 static void print_summary(const Options *opt, const RunResult *results, int count) {
@@ -309,17 +406,21 @@ static void print_summary(const Options *opt, const RunResult *results, int coun
         return;
     }
     double total = 0.0;
-    double min = results[0].elapsed_ms;
-    double max = results[0].elapsed_ms;
+    double min_t = results[0].elapsed_ms;
+    double max_t = results[0].elapsed_ms;
+    double sum_gbps = 0.0;
+    double sum_gflops = 0.0;
     for (int i = 0; i < count; ++i) {
         const double t = results[i].elapsed_ms;
         total += t;
-        if (t < min) min = t;
-        if (t > max) max = t;
+        if (t < min_t) min_t = t;
+        if (t > max_t) max_t = t;
+        sum_gbps += results[i].effective_gbps;
+        sum_gflops += results[i].gflops;
     }
     const double avg = total / count;
 
-    printf("Dijkstra Hybrid CUDA APSP\n");
+    printf("Dijkstra Block-Per-Source CUDA APSP (Warp Shuffle Min-Reduction)\n");
     printf("  size        : %zu\n", opt->size);
     printf("  density     : %.3f\n", opt->density);
     printf("  max weight  : %d\n", opt->max_weight);
@@ -328,7 +429,9 @@ static void print_summary(const Options *opt, const RunResult *results, int coun
     printf("  graph type  : %s\n", opt->undirected ? "undirected" : "directed");
     printf("  block dim   : %d\n", opt->block_dim);
     printf("  iterations  : %d\n", count);
-    printf("  wall time ms: avg=%.3f min=%.3f max=%.3f\n", avg, min, max);
+    printf("  wall time ms: avg=%.3f min=%.3f max=%.3f\n", avg, min_t, max_t);
+    printf("  effective GB/s : avg=%.2f\n", sum_gbps / count);
+    printf("  GFLOPS      : avg=%.2f\n", sum_gflops / count);
 }
 
 int main(int argc, char **argv) {
@@ -369,33 +472,20 @@ int main(int argc, char **argv) {
 
     const size_t n = graph.order;
     const size_t matrix_bytes = n * n * sizeof(int);
-    const size_t row_bytes = n * sizeof(int);
+    const size_t dist_bytes = n * n * sizeof(int);
 
     int *device_weights = NULL;
-    CUDA_CALL(cudaMalloc((void **)&device_weights, matrix_bytes));
-    CUDA_CALL(cudaMemcpy(device_weights, graph.weights, matrix_bytes, cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMalloc((void **)&device_weights, matrix_bytes));
+    checkCudaErrors(cudaMemcpy(device_weights, graph.weights, matrix_bytes, cudaMemcpyHostToDevice));
 
-    int *device_dist_buffers[2] = {NULL, NULL};
-    CUDA_CALL(cudaMalloc((void **)&device_dist_buffers[0], row_bytes));
-    CUDA_CALL(cudaMalloc((void **)&device_dist_buffers[1], row_bytes));
+    int *device_dist = NULL;
+    checkCudaErrors(cudaMalloc((void **)&device_dist, dist_bytes));
 
-    int *host_dist = (int *)malloc(row_bytes);
-    if (!host_dist) {
-        fprintf(stderr, "Host memory allocation failed\n");
-        free(host_dist);
-        CUDA_CALL(cudaFree(device_weights));
-        CUDA_CALL(cudaFree(device_dist_buffers[0]));
-        CUDA_CALL(cudaFree(device_dist_buffers[1]));
-        free_matrix_graph(&graph);
-        return 1;
-    }
-    unsigned char *visited = (unsigned char *)malloc(n);
-    if (!visited) {
-        fprintf(stderr, "Visited array allocation failed\n");
-        free(host_dist);
-        CUDA_CALL(cudaFree(device_weights));
-        CUDA_CALL(cudaFree(device_dist_buffers[0]));
-        CUDA_CALL(cudaFree(device_dist_buffers[1]));
+    int *output = (int *)malloc(dist_bytes);
+    if (!output) {
+        fprintf(stderr, "Allocation failure for output distances\n");
+        checkCudaErrors(cudaFree(device_dist));
+        checkCudaErrors(cudaFree(device_weights));
         free_matrix_graph(&graph);
         return 1;
     }
@@ -403,101 +493,76 @@ int main(int argc, char **argv) {
     RunResult *results = (RunResult *)calloc((size_t)opt.iterations, sizeof(RunResult));
     if (!results) {
         fprintf(stderr, "Allocation failure for results buffer\n");
-        free(visited);
-        free(host_dist);
-        CUDA_CALL(cudaFree(device_weights));
-        CUDA_CALL(cudaFree(device_dist_buffers[0]));
-        CUDA_CALL(cudaFree(device_dist_buffers[1]));
+        free(output);
+        checkCudaErrors(cudaFree(device_dist));
+        checkCudaErrors(cudaFree(device_weights));
         free_matrix_graph(&graph);
         return 1;
     }
 
-    int *output = (int *)malloc(matrix_bytes);
-    if (!output) {
-        fprintf(stderr, "Allocation failure for output distances\n");
-        free(results);
-        free(visited);
-        free(host_dist);
-        CUDA_CALL(cudaFree(device_weights));
-        CUDA_CALL(cudaFree(device_dist_buffers[0]));
-        CUDA_CALL(cudaFree(device_dist_buffers[1]));
-        free_matrix_graph(&graph);
-        return 1;
+    const int block_size = opt.block_dim;
+    int num_blocks = (int)n;
+
+    unsigned char *device_visited = NULL;
+    int use_large_kernel = (n > 4096);
+    if (use_large_kernel) {
+        checkCudaErrors(cudaMalloc((void **)&device_visited, n * n * sizeof(unsigned char)));
     }
 
-    dim3 block(opt.block_dim);
-    dim3 grid((unsigned int)((n + block.x - 1) / block.x));
+    /* Dijkstra per source: O(n²) FLOPs per source (min scan n + relax n per iter, n iters).
+     * n sources => O(n³) FLOPs total.
+     * Bytes: weights n² (read per source), dist n² read+write per source => ~3*n³*4 bytes. */
+    const double flops_per_source = (double)n * (double)n * 3.0; /* min scan + relax per iter */
+    const double flops_total = flops_per_source * (double)n;
+    const double bytes_total = 12.0 * (double)n * (double)n * (double)n; /* ~3*n³ ints */
+
+    cudaEvent_t start_event, stop_event;
+    checkCudaErrors(cudaEventCreate(&start_event));
+    checkCudaErrors(cudaEventCreate(&stop_event));
 
     for (int iter = 0; iter < opt.iterations; ++iter) {
-        const double start_ms = monotonic_time_ms();
+        checkCudaErrors(cudaEventRecord(start_event, 0));
 
-        for (size_t src = 0; src < n; ++src) {
-            for (size_t i = 0; i < n; ++i) {
-                host_dist[i] = graph.infinity;
-                visited[i] = 0;
-            }
-            host_dist[src] = 0;
-
-            CUDA_CALL(cudaMemcpy(device_dist_buffers[0], host_dist, row_bytes, cudaMemcpyHostToDevice));
-            int current_buffer = 0;
-
-            for (size_t step = 0; step < n; ++step) {
-                size_t u = SIZE_MAX;
-                int best = graph.infinity;
-                for (size_t v = 0; v < n; ++v) {
-                    if (!visited[v] && host_dist[v] < best) {
-                        best = host_dist[v];
-                        u = v;
-                    }
-                }
-                if (u == SIZE_MAX) {
-                    break;
-                }
-                visited[u] = 1;
-
-                const int source_distance = host_dist[u];
-                const int next_buffer = 1 - current_buffer;
-                relax_neighbors_kernel<<<grid, block>>>(device_weights,
-                                                        device_dist_buffers[current_buffer],
-                                                        device_dist_buffers[next_buffer],
-                                                        (int)n,
-                                                        (int)u,
-                                                        source_distance,
-                                                        graph.infinity);
-                CUDA_CALL(cudaDeviceSynchronize());
-
-                current_buffer = next_buffer;
-                CUDA_CALL(cudaMemcpy(host_dist, device_dist_buffers[current_buffer], row_bytes, cudaMemcpyDeviceToHost));
-            }
-
-            memcpy(output + src * n, host_dist, row_bytes);
+        if (use_large_kernel) {
+            dijkstra_sssp_block_large<<<num_blocks, block_size>>>(
+                device_weights, device_dist, device_visited,
+                (int)n, graph.infinity, 0);
+        } else {
+            dijkstra_sssp_block<<<num_blocks, block_size>>>(
+                device_weights, device_dist, (int)n, graph.infinity, 0);
         }
+        checkCudaErrors(cudaGetLastError());
 
-        const double end_ms = monotonic_time_ms();
-        const double elapsed = end_ms - start_ms;
-        results[iter].elapsed_ms = elapsed;
-        append_csv(&opt, iter, elapsed);
+        checkCudaErrors(cudaEventRecord(stop_event, 0));
+        checkCudaErrors(cudaEventSynchronize(stop_event));
+        checkCudaErrors(cudaDeviceSynchronize());
+
+        float elapsed_ms = 0.0f;
+        checkCudaErrors(cudaEventElapsedTime(&elapsed_ms, start_event, stop_event));
+        const double elapsed_sec = (double)elapsed_ms / 1000.0;
+        results[iter].elapsed_ms = (double)elapsed_ms;
+        results[iter].effective_gbps = (elapsed_sec > 0.0) ? (bytes_total / 1e9 / elapsed_sec) : 0.0;
+        results[iter].gflops = (elapsed_sec > 0.0) ? (flops_total / 1e9 / elapsed_sec) : 0.0;
+        append_csv(&opt, iter, &results[iter]);
         if (opt.quiet && !opt.csv_path) {
-            printf("dijkstra-gpu,size=%zu,iteration=%d,wall_time_ms=%.6f\n", n, iter, elapsed);
+            printf("dijkstra-gpu,size=%zu,iteration=%d,wall_time_ms=%.6f,gbps=%.2f,gflops=%.2f\n",
+                   n, iter, elapsed_ms, results[iter].effective_gbps, results[iter].gflops);
         }
     }
 
+    checkCudaErrors(cudaMemcpy(output, device_dist, dist_bytes, cudaMemcpyDeviceToHost));
+
     if (opt.verify_with_cpu) {
-        int *reference = (int *)malloc(matrix_bytes);
+        int *reference = (int *)malloc(dist_bytes);
         if (!reference) {
             fprintf(stderr, "Verification skipped (allocation failure)\n");
         } else {
-            dijkstra_reference(&graph, reference);
-            int mismatches = 0;
-            for (size_t idx = 0; idx < n * n; ++idx) {
-                if (reference[idx] != output[idx]) {
-                    ++mismatches;
-                }
-            }
+            dijkstra_apsp_cpu(&graph, reference);
+            const int mismatches = verify_matrices(reference, output, n, 10);
             if (mismatches == 0) {
-                printf("Verification: PASS (GPU hybrid matches CPU Dijkstra)\n");
+                printf("Verification: PASS (GPU block-per-source matches CPU Dijkstra)\n");
             } else {
-                printf("Verification: FAIL (%d mismatches)\n", mismatches);
+                printf("Verification: FAIL (%d mismatches, first 10 shown above)\n", mismatches);
             }
             free(reference);
         }
@@ -505,13 +570,15 @@ int main(int argc, char **argv) {
 
     print_summary(&opt, results, opt.iterations);
 
-    free(output);
     free(results);
-    free(visited);
-    free(host_dist);
-    CUDA_CALL(cudaFree(device_weights));
-    CUDA_CALL(cudaFree(device_dist_buffers[0]));
-    CUDA_CALL(cudaFree(device_dist_buffers[1]));
+    free(output);
+    if (device_visited) {
+        checkCudaErrors(cudaFree(device_visited));
+    }
+    checkCudaErrors(cudaFree(device_dist));
+    checkCudaErrors(cudaFree(device_weights));
+    checkCudaErrors(cudaEventDestroy(start_event));
+    checkCudaErrors(cudaEventDestroy(stop_event));
     free_matrix_graph(&graph);
     return 0;
 }
